@@ -89,6 +89,72 @@ def horario(photo, out, kicker, title):
     img.save(out, quality=92)
 
 
+RED = (200, 30, 30)
+INK = (25, 25, 25)
+
+
+def paper_sign(lines, w=640, angle=-4):
+    """Cartel de cartulina con texto a mano. lines: [(texto, tamaño, color)]."""
+    pad = 56
+    d0 = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    rows = []
+    for txt, size, col in lines:
+        f = font("Inkfree.ttf", size)
+        while d0.textlength(txt, font=f) > w - pad * 2 and size > 20:
+            size -= 4
+            f = font("Inkfree.ttf", size)
+        bb = f.getbbox(txt)
+        rows.append((txt, f, col, bb[3] - bb[1], bb[1]))
+    h = pad * 2 + sum(r[3] for r in rows) + 26 * (len(rows) - 1)
+    card = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(card)
+    d.rectangle([0, 0, w, h], fill=(246, 241, 228, 255))
+    # textura sutil de papel
+    import random
+    rnd = random.Random(7)
+    for _ in range(2500):
+        x, y = rnd.randrange(w), rnd.randrange(h)
+        c = rnd.randint(225, 240)
+        d.point((x, y), fill=(c, c - 4, c - 14, 255))
+    y = pad
+    for txt, f, col, th, top in rows:
+        tw = d.textlength(txt, font=f)
+        x = (w - tw) / 2
+        weight = 3 if f.size >= 90 else 1.5  # trazo grueso tipo plumón
+        steps = [(dx, dy) for dx in (0, weight / 2, weight) for dy in (0, weight / 2)]
+        for dx, dy in steps:
+            d.text((x + dx, y - top + dy), txt, font=f, fill=col)
+        y += th + 26
+    # cinta adhesiva
+    full = Image.new("RGBA", (w + 80, h + 80), (0, 0, 0, 0))
+    full.alpha_composite(card, (40, 40))
+    for cx in (40 + 10, 40 + w - 10):
+        tape = Image.new("RGBA", (120, 38), (235, 225, 190, 200))
+        tape = tape.rotate(40 if cx < w / 2 else -40, expand=True)
+        full.alpha_composite(tape, (int(cx - tape.width / 2), 40 - tape.height // 2))
+    card = full.rotate(angle, expand=True, resample=Image.BICUBIC)
+    shadow = Image.new("RGBA", card.size, (0, 0, 0, 0))
+    shadow.paste((0, 0, 0, 150), mask=card.split()[3])
+    shadow = shadow.filter(ImageFilter.GaussianBlur(18))
+    return card, shadow
+
+
+def cartel(photo, out, *lines_spec):
+    """lines_spec: 'texto|tamaño|r' (r=rojo, k=negro)."""
+    img = cover(Image.open(photo), focus_y=0.4).convert("RGBA")
+    img = Image.alpha_composite(img, Image.new("RGBA", (W, H), (0, 0, 0, 40)))
+    lines = []
+    for s in lines_spec:
+        txt, size, c = s.split("|")
+        lines.append((txt, int(size), RED if c == "r" else INK))
+    card, shadow = paper_sign(lines)
+    x = (W - card.width) // 2
+    y = H - card.height - 70
+    img.alpha_composite(shadow, (x + 12, y + 22))
+    img.alpha_composite(card, (x, y))
+    img.convert("RGB").save(out, quality=92)
+
+
 if __name__ == "__main__":
     photo, out, style, *args = sys.argv[1:]
-    {"horario": horario}[style](photo, out, *args)
+    {"horario": horario, "cartel": cartel}[style](photo, out, *args)
